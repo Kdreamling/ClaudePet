@@ -149,15 +149,29 @@ function App() {
     return () => window.removeEventListener('click', handler)
   }, [])
 
+  // 拖拽窗口（Tauri 环境下）
+  const handleDragStart = async (e: React.MouseEvent) => {
+    // 只在非聊天状态下拖拽
+    if (useChatStore.getState().isOpen) return
+    try {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window')
+      await getCurrentWindow().startDragging()
+    } catch {
+      // 浏览器环境忽略
+    }
+  }
+
   return (
     <div
       className="relative"
+      onMouseDown={handleDragStart}
       style={{
         width: 280,
         height: 280,
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
+        justifyContent: 'flex-end',
       }}
     >
       {/* 气泡层 — 在角色上方 */}
@@ -174,7 +188,7 @@ function App() {
         <PetCanvas />
       </div>
 
-      {/* 对话窗口 */}
+      {/* 对话窗口 — 用新窗口打开（Tauri）或 overlay（浏览器） */}
       <ChatWindow />
 
       {/* 便签 */}

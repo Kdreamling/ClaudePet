@@ -21,8 +21,8 @@
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "resizable": false,
-        "x": 1200,
-        "y": 700
+        "x": 1000,
+        "y": 400
       }
     ],
     "trayIcon": {

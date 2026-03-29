@@ -3,6 +3,28 @@ import { useChatStore } from '../stores/chatStore'
 import MessageBubble from './MessageBubble'
 import ChatInput from './ChatInput'
 
+/** 检测是否在 Tauri 环境 */
+const IS_TAURI = !!(window as any).__TAURI_INTERNALS__
+
+/** Tauri 环境下调整窗口大小 */
+async function resizeWindow(chatOpen: boolean) {
+  if (!IS_TAURI) return
+  try {
+    const { getCurrentWindow } = await import('@tauri-apps/api/window')
+    const { LogicalSize } = await import('@tauri-apps/api/dpi')
+    const win = getCurrentWindow()
+    if (chatOpen) {
+      await win.setSize(new LogicalSize(400, 600))
+      await win.setAlwaysOnTop(true)
+    } else {
+      await win.setSize(new LogicalSize(280, 280))
+      await win.setAlwaysOnTop(true)
+    }
+  } catch (e) {
+    console.error('resize failed:', e)
+  }
+}
+
 export default function ChatWindow() {
   const { messages, isStreaming, currentText, isOpen, closeChat, sendMessage } = useChatStore()
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -13,22 +35,37 @@ export default function ChatWindow() {
     }
   }, [messages, currentText])
 
+  // Tauri 环境：打开/关闭聊天时调整窗口大小
+  useEffect(() => {
+    resizeWindow(isOpen)
+  }, [isOpen])
+
   if (!isOpen) return null
 
   return (
     <div
-      className="fixed inset-0 flex items-center justify-center z-50"
-      style={{ background: 'rgba(0,0,0,0.15)', backdropFilter: 'blur(4px)' }}
-      onClick={(e) => { if (e.target === e.currentTarget) closeChat() }}
+      className="fixed inset-0 flex flex-col z-50"
+      style={{
+        background: IS_TAURI ? 'var(--color-chat-bg)' : 'rgba(0,0,0,0.15)',
+        backdropFilter: IS_TAURI ? 'none' : 'blur(4px)',
+        borderRadius: IS_TAURI ? '12px' : '0',
+      }}
+      onClick={(e) => {
+        if (!IS_TAURI && e.target === e.currentTarget) closeChat()
+      }}
     >
       <div
-        className="flex flex-col rounded-2xl overflow-hidden"
+        className="flex flex-col flex-1 overflow-hidden"
         style={{
-          width: 380,
-          height: 520,
-          background: 'var(--color-chat-bg)',
-          boxShadow: '0 8px 32px rgba(93, 64, 55, 0.18)',
-          border: '1px solid rgba(160, 120, 90, 0.12)',
+          ...(IS_TAURI ? {} : {
+            width: 380,
+            height: 520,
+            margin: 'auto',
+            borderRadius: '16px',
+            background: 'var(--color-chat-bg)',
+            boxShadow: '0 8px 32px rgba(93, 64, 55, 0.18)',
+            border: '1px solid rgba(160, 120, 90, 0.12)',
+          }),
         }}
       >
         {/* 标题栏 */}
