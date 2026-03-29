@@ -172,7 +172,7 @@ function PetApp() {
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        justifyContent: 'flex-end',
+        justifyContent: 'center',
         background: 'transparent',
       }}
     >

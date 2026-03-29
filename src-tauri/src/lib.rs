@@ -6,14 +6,12 @@ use tauri::{
 
 #[tauri::command]
 async fn open_chat_window(app: tauri::AppHandle) -> Result<(), String> {
-    // 如果聊天窗口已存在，聚焦它
     if let Some(win) = app.get_webview_window("chat") {
         let _ = win.show();
         let _ = win.set_focus();
         return Ok(());
     }
 
-    // 获取角色窗口位置，在旁边打开聊天窗口
     let (chat_x, chat_y) = if let Some(pet_win) = app.get_webview_window("pet") {
         if let Ok(pos) = pet_win.outer_position() {
             (pos.x as f64 - 400.0, pos.y as f64 - 150.0)
@@ -24,7 +22,6 @@ async fn open_chat_window(app: tauri::AppHandle) -> Result<(), String> {
         (600.0, 300.0)
     };
 
-    // 创建独立聊天窗口
     WebviewWindowBuilder::new(
         &app,
         "chat",
@@ -32,9 +29,8 @@ async fn open_chat_window(app: tauri::AppHandle) -> Result<(), String> {
     )
     .title("ClaudePet Chat")
     .inner_size(380.0, 520.0)
-    .position(chat_x, chat_y)
+    .position(chat_x.max(0.0), chat_y.max(0.0))
     .decorations(false)
-    .transparent(true)
     .always_on_top(true)
     .resizable(true)
     .skip_taskbar(true)
@@ -58,7 +54,6 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![open_chat_window, close_chat_window])
         .setup(|app| {
-            // 系统托盘
             let show = MenuItem::with_id(app, "show", "显示 ClaudePet", true, None::<&str>)?;
             let chat = MenuItem::with_id(app, "chat", "打开对话", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
