@@ -1,0 +1,26 @@
+@import "tailwindcss";
+
+:root {
+  --color-bg: #FDFAF6;
+  --color-bubble: #FFF8F0;
+  --color-text: #5D4037;
+  --color-text-light: #8D6E63;
+  --color-chat-bg: #FAFAF5;
+  --color-user-bubble: #D7CCC8;
+  --color-ai-bubble: #FFFFFF;
+  --color-note: #FFF9C4;
+  --color-accent: #A0785A;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background: transparent;
+  overflow: hidden;
+  font-family: 'Instrument Sans', 'SF Pro Display', system-ui, sans-serif;
+  color: var(--color-text);
+}
