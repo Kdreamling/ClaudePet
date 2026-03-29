@@ -2,6 +2,7 @@ import { useEffect, useCallback, useState, useRef } from 'react'
 import PetCanvas from './pet/PetCanvas'
 import BubbleOverlay from './pet/BubbleOverlay'
 import ChatWindow from './chat/ChatWindow'
+import NoteOverlay from './pet/NoteOverlay'
 import { usePetStore } from './stores/petStore'
 import { useChatStore } from './stores/chatStore'
 import { collectSignals, recordInteraction, recordPush } from './brain/perception'
@@ -175,6 +176,9 @@ function App() {
 
       {/* 对话窗口 */}
       <ChatWindow />
+
+      {/* 便签 */}
+      <NoteOverlay />
     </div>
   )
 }

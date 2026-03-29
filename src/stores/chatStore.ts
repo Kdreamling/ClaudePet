@@ -1,7 +1,10 @@
 import { create } from 'zustand'
 import type { ChatMessage } from '../brain/types'
-import { streamChat } from '../api/chatApi'
+import { streamChat, fetchPetMessages } from '../api/chatApi'
 import { usePetStore } from './petStore'
+import { client } from '../api/client'
+
+const PET_SESSION_KEY = 'chenpet_session_id'
 
 interface ChatStore {
   messages: ChatMessage[]
@@ -9,10 +12,13 @@ interface ChatStore {
   currentText: string
   isOpen: boolean
   sessionId: string
+  initialized: boolean
 
+  initSession: () => Promise<void>
   openChat: () => void
   closeChat: () => void
   sendMessage: (content: string) => Promise<void>
+  loadHistory: () => Promise<void>
   clearMessages: () => void
 }
 
@@ -21,21 +27,51 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   isStreaming: false,
   currentText: '',
   isOpen: false,
-  sessionId: 'pet-default',
+  sessionId: '',
+  initialized: false,
+
+  /** 初始化桌宠专属 session（首次创建，之后复用） */
+  initSession: async () => {
+    if (get().initialized) return
+
+    // 先从本地存储恢复
+    const stored = localStorage.getItem(PET_SESSION_KEY)
+    if (stored) {
+      set({ sessionId: stored, initialized: true })
+      return
+    }
+
+    // 创建新 session
+    try {
+      const result = await client.post<{ id: string }>('/api/sessions', {
+        scene_type: 'pet',
+        model: 'zenmux/claude-opus-4.6',
+        title: 'ClaudePet 桌宠对话',
+      })
+      if (result?.id) {
+        localStorage.setItem(PET_SESSION_KEY, result.id)
+        set({ sessionId: result.id, initialized: true })
+      }
+    } catch (err) {
+      console.error('Failed to create pet session:', err)
+      // fallback
+      set({ sessionId: 'pet-default', initialized: true })
+    }
+  },
 
   openChat: () => {
+    const { initialized, initSession, loadHistory } = get()
     set({ isOpen: true })
-    // 打开聊天 → 进入聊天状态
     usePetStore.getState().setBehaviorState('CHATTING')
+    if (!initialized) initSession().then(() => loadHistory())
+    else if (get().messages.length === 0) loadHistory()
   },
 
   closeChat: () => {
     set({ isOpen: false })
-    // 关闭聊天 → 回到空闲，短暂开心
     const pet = usePetStore.getState()
     pet.setBehaviorState('IDLE')
     pet.setMood('happy')
-    // 5 秒后恢复 idle
     setTimeout(() => {
       if (usePetStore.getState().mood === 'happy') {
         usePetStore.getState().setMood('idle')
@@ -43,11 +79,27 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }, 5000)
   },
 
+  /** 加载历史消息 */
+  loadHistory: async () => {
+    const { sessionId } = get()
+    if (!sessionId) return
+    try {
+      const msgs = await fetchPetMessages(sessionId)
+      if (msgs.length > 0) {
+        set({ messages: msgs })
+      }
+    } catch (err) {
+      console.error('Failed to load history:', err)
+    }
+  },
+
   sendMessage: async (content: string) => {
+    const state = get()
+    // 确保 session 已初始化
+    if (!state.initialized) await state.initSession()
     const { sessionId, messages } = get()
     const pet = usePetStore.getState()
 
-    // 添加用户消息
     const userMsg: ChatMessage = {
       id: crypto.randomUUID(),
       role: 'user',
@@ -56,7 +108,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
     set({ messages: [...messages, userMsg], isStreaming: true, currentText: '' })
 
-    // 发送时 → thinking 动画
     pet.setAnimation('thinking')
 
     try {
@@ -68,7 +119,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         if (chunk.type === 'text') {
           fullText += chunk.content
           set({ currentText: fullText })
-          // 第一个字到达 → 切换到 typing 动画
           if (!startedTyping) {
             pet.setAnimation('typing')
             startedTyping = true
@@ -76,7 +126,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         }
       }
 
-      // 流式结束 → happy 动画
       pet.setAnimation('happy')
       setTimeout(() => {
         if (usePetStore.getState().animation === 'happy') {
@@ -97,7 +146,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }))
     } catch (err) {
       console.error('Chat error:', err)
-      // 出错 → error 动画
       pet.setAnimation('error')
       setTimeout(() => pet.setAnimation('idle_stand'), 3000)
       set({ isStreaming: false, currentText: '' })
