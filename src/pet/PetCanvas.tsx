@@ -1,35 +1,24 @@
 import { useEffect, useRef } from 'react'
 import { usePetStore } from '../stores/petStore'
 import type { AnimationName } from '../brain/types'
+import { SPRITE_FRAMES, PALETTE } from './sprites'
 
 /**
  * 像素角色渲染层
- * MVP 阶段用 Canvas 绘制占位方块 + 简单动画
- * 正式美术接入后替换为 PixiJS sprite sheet
+ * 从 sprites.ts 读取像素数据，逐像素绘制到 Canvas
+ * imageRendering: pixelated 保证像素锐利不模糊
  */
 
-/** 占位色 — 不同状态不同颜色，方便调试 */
-const ANIMATION_COLORS: Record<AnimationName, string> = {
-  idle_stand: '#A0785A',
-  idle_sit:   '#8D6E63',
-  walk_left:  '#A0785A',
-  walk_right: '#A0785A',
-  sleep:      '#BCAAA4',
-  happy:      '#FFB74D',
-  bored:      '#90A4AE',
-  sulking:    '#78909C',
-  wave:       '#FFB74D',
-  knock:      '#FF8A65',
-}
-
-const PET_SIZE = 64
+const SPRITE_SIZE = 32   // sprite 原始尺寸
+const SCALE = 4          // 放大倍数（32 * 4 = 128px 显示尺寸）
 const CANVAS_W = 200
 const CANVAS_H = 200
+const ANIM_SPEED = 40    // 每 N 帧切换一次动画帧（越大越慢）
 
 export default function PetCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const { animation, direction, onPetClicked } = usePetStore()
-  const frameRef = useRef(0)
+  const tickRef = useRef(0)
   const animFrameRef = useRef(0)
 
   useEffect(() => {
@@ -44,52 +33,75 @@ export default function PetCanvas() {
       if (!ctx || !running) return
       ctx.clearRect(0, 0, CANVAS_W, CANVAS_H)
 
-      const color = ANIMATION_COLORS[animation] || '#A0785A'
+      // 获取当前动画帧序列
+      const frames = SPRITE_FRAMES[animation] || SPRITE_FRAMES.idle_stand
+      const frameIndex = Math.floor(tickRef.current / ANIM_SPEED) % frames.length
+      const pixelData = frames[frameIndex]
 
-      // 简单的呼吸动画：y 轴微微上下
-      const breathOffset = Math.sin(frameRef.current * 0.05) * 2
-      const x = (CANVAS_W - PET_SIZE) / 2
-      const y = CANVAS_H - PET_SIZE - 10 + breathOffset
+      // 呼吸动画：y 轴微微上下浮动
+      const breathOffset = Math.sin(tickRef.current * 0.04) * 1.5
 
-      // 身体
-      ctx.fillStyle = color
-      ctx.fillRect(x, y, PET_SIZE, PET_SIZE)
+      // 居中绘制
+      const drawSize = SPRITE_SIZE * SCALE
+      const offsetX = (CANVAS_W - drawSize) / 2
+      const offsetY = CANVAS_H - drawSize - 8 + breathOffset
 
-      // 眼睛（朝向不同位置不同）
-      ctx.fillStyle = '#FFF'
-      const eyeOffsetX = direction === 'right' ? 12 : 4
-      ctx.fillRect(x + eyeOffsetX, y + 16, 12, 12)
-      ctx.fillRect(x + eyeOffsetX + 24, y + 16, 12, 12)
+      // 逐像素绘制
+      const flipH = direction === 'left'
+      for (let y = 0; y < SPRITE_SIZE; y++) {
+        const row = pixelData[y]
+        if (!row) continue
+        for (let x = 0; x < SPRITE_SIZE; x++) {
+          const colorIdx = row[flipH ? (SPRITE_SIZE - 1 - x) : x]
+          if (!colorIdx) continue // 跳过透明
 
-      // 瞳孔
-      ctx.fillStyle = '#332A22'
-      const pupilShift = direction === 'right' ? 4 : 0
-      ctx.fillRect(x + eyeOffsetX + pupilShift + 2, y + 20, 6, 6)
-      ctx.fillRect(x + eyeOffsetX + 24 + pupilShift + 2, y + 20, 6, 6)
+          const color = PALETTE[colorIdx]
+          if (!color || color === 'transparent') continue
 
-      // 睡觉状态：画 ZZZ
-      if (animation === 'sleep') {
-        ctx.fillStyle = '#5D4037'
-        ctx.font = '14px monospace'
-        const zzz = 'z'.repeat(((frameRef.current >> 5) % 3) + 1)
-        ctx.fillText(zzz, x + PET_SIZE + 4, y - 4)
+          ctx.fillStyle = color
+          ctx.fillRect(
+            Math.floor(offsetX + x * SCALE),
+            Math.floor(offsetY + y * SCALE),
+            SCALE,
+            SCALE,
+          )
+        }
       }
 
-      // 开心状态：画爱心
+      // 特效层
       if (animation === 'happy') {
+        // 爱心飘起
+        const heartY = offsetY - 12 - Math.sin(tickRef.current * 0.08) * 6
         ctx.fillStyle = '#E91E63'
-        ctx.font = '16px serif'
-        ctx.fillText('♥', x + PET_SIZE / 2 - 6, y - 8)
+        ctx.font = `${16}px serif`
+        ctx.fillText('♥', offsetX + drawSize / 2 - 6, heartY)
       }
 
-      // 敲屏幕状态：画感叹号
+      if (animation === 'sleep') {
+        // ZZZ 浮动
+        const zCount = (Math.floor(tickRef.current / 30) % 3) + 1
+        ctx.fillStyle = '#8D6E63'
+        ctx.font = '14px monospace'
+        ctx.fillText('z'.repeat(zCount), offsetX + drawSize + 4, offsetY + 10)
+      }
+
       if (animation === 'knock') {
-        ctx.fillStyle = '#FF5722'
-        ctx.font = 'bold 18px monospace'
-        ctx.fillText('!', x + PET_SIZE / 2 - 4, y - 8)
+        // 感叹号闪烁
+        if (Math.floor(tickRef.current / 20) % 2 === 0) {
+          ctx.fillStyle = '#FF5722'
+          ctx.font = 'bold 18px monospace'
+          ctx.fillText('!', offsetX + drawSize / 2 - 4, offsetY - 8)
+        }
       }
 
-      frameRef.current++
+      if (animation === 'bored') {
+        // 叹气省略号
+        ctx.fillStyle = '#8D6E63'
+        ctx.font = '12px monospace'
+        ctx.fillText('...', offsetX + drawSize + 2, offsetY + drawSize / 2)
+      }
+
+      tickRef.current++
       animFrameRef.current = requestAnimationFrame(draw)
     }
 
