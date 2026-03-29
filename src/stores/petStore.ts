@@ -16,6 +16,7 @@ interface PetStore {
 
   // 动作
   setMood: (mood: Mood) => void
+  setAnimation: (anim: AnimationName) => void
   setActivity: (activity: Activity) => void
   setBehaviorState: (state: BehaviorState) => void
   setPositionX: (x: number) => void
@@ -37,6 +38,8 @@ export const usePetStore = create<PetStore>((set, get) => ({
   bubble: null,
 
   setMood: (mood) => set({ mood, animation: moodToAnimation(mood) }),
+
+  setAnimation: (anim) => set({ animation: anim }),
 
   setActivity: (activity) => set({ activity }),
 

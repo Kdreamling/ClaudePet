@@ -7,12 +7,14 @@ export type Activity = 'standing' | 'walking' | 'sitting' | 'sleeping' | 'readin
 /** 行为状态机状态 */
 export type BehaviorState = 'IDLE' | 'WANTING' | 'CHATTING' | 'SULKING'
 
-/** 动画名称 */
+/** 动画名称（对应 GIF 文件） */
 export type AnimationName =
   | 'idle_stand' | 'idle_sit'
   | 'walk_left' | 'walk_right'
   | 'sleep' | 'happy' | 'bored' | 'sulking'
   | 'wave' | 'knock'
+  | 'thinking' | 'typing' | 'error' | 'notification'
+  | 'building' | 'conducting' | 'juggling' | 'sweeping' | 'carrying'
 
 /** 推送动作类型 */
 export type PushAction =
