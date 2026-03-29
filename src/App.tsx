@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react'
+import { useEffect, useCallback, useState } from 'react'
 import PetCanvas from './pet/PetCanvas'
 import BubbleOverlay from './pet/BubbleOverlay'
 import ChatWindow from './chat/ChatWindow'
@@ -12,9 +12,34 @@ import { generatePush } from './api/petApi'
 /** 大脑心跳间隔（毫秒） */
 const BRAIN_TICK_INTERVAL = 60_000 // 每分钟检查一次
 
+/** 简易登录 — 复用 Reverie 的 JWT */
+async function ensureAuth() {
+  if (localStorage.getItem('token')) return true
+  const password = prompt('输入密码~')
+  if (!password) return false
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    })
+    if (!res.ok) { alert('密码不对哦'); return false }
+    const data = await res.json()
+    localStorage.setItem('token', data.token)
+    return true
+  } catch { alert('连接失败'); return false }
+}
+
 function App() {
+  const [authed, setAuthed] = useState(!!localStorage.getItem('token'))
   const { mood, setMood, showBubble, setBehaviorState } = usePetStore()
-  const _openChat = useChatStore((s) => s.openChat)
+
+  // 启动时检查认证
+  useEffect(() => {
+    if (!authed) {
+      ensureAuth().then(ok => setAuthed(ok))
+    }
+  }, [authed])
 
   /** 大脑心跳 — 感知 → 决策 → 行动 */
   const brainTick = useCallback(async () => {
