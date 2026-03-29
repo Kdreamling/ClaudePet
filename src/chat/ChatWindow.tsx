@@ -3,26 +3,15 @@ import { useChatStore } from '../stores/chatStore'
 import MessageBubble from './MessageBubble'
 import ChatInput from './ChatInput'
 
-/** 检测是否在 Tauri 环境 */
 const IS_TAURI = !!(window as any).__TAURI_INTERNALS__
+const IS_CHAT_MODE = new URLSearchParams(window.location.search).get('mode') === 'chat'
 
-/** Tauri 环境下调整窗口大小 */
-async function resizeWindow(chatOpen: boolean) {
-  if (!IS_TAURI) return
+/** 关闭聊天：Tauri 聊天窗口直接关窗口 */
+async function closeChatTauri() {
   try {
     const { getCurrentWindow } = await import('@tauri-apps/api/window')
-    const { LogicalSize } = await import('@tauri-apps/api/dpi')
-    const win = getCurrentWindow()
-    if (chatOpen) {
-      await win.setSize(new LogicalSize(400, 600))
-      await win.setAlwaysOnTop(true)
-    } else {
-      await win.setSize(new LogicalSize(280, 280))
-      await win.setAlwaysOnTop(true)
-    }
-  } catch (e) {
-    console.error('resize failed:', e)
-  }
+    await getCurrentWindow().close()
+  } catch {}
 }
 
 export default function ChatWindow() {
@@ -35,29 +24,32 @@ export default function ChatWindow() {
     }
   }, [messages, currentText])
 
-  // Tauri 环境：打开/关闭聊天时调整窗口大小
-  useEffect(() => {
-    resizeWindow(isOpen)
-  }, [isOpen])
-
   if (!isOpen) return null
+
+  const handleClose = () => {
+    if (IS_TAURI && IS_CHAT_MODE) {
+      closeChatTauri()
+    } else {
+      closeChat()
+    }
+  }
 
   return (
     <div
       className="fixed inset-0 flex flex-col z-50"
       style={{
-        background: IS_TAURI ? 'var(--color-chat-bg)' : 'rgba(0,0,0,0.15)',
-        backdropFilter: IS_TAURI ? 'none' : 'blur(4px)',
-        borderRadius: IS_TAURI ? '12px' : '0',
+        background: IS_CHAT_MODE ? 'var(--color-chat-bg)' : 'rgba(0,0,0,0.15)',
+        backdropFilter: IS_CHAT_MODE ? 'none' : 'blur(4px)',
+        borderRadius: IS_CHAT_MODE ? '12px' : '0',
       }}
       onClick={(e) => {
-        if (!IS_TAURI && e.target === e.currentTarget) closeChat()
+        if (!IS_CHAT_MODE && e.target === e.currentTarget) handleClose()
       }}
     >
       <div
         className="flex flex-col flex-1 overflow-hidden"
         style={{
-          ...(IS_TAURI ? {} : {
+          ...(IS_CHAT_MODE ? {} : {
             width: 380,
             height: 520,
             margin: 'auto',
@@ -93,7 +85,7 @@ export default function ChatWindow() {
             )}
           </div>
           <button
-            onClick={closeChat}
+            onClick={handleClose}
             className="w-7 h-7 flex items-center justify-center rounded-full text-xs transition-all hover:scale-110"
             style={{
               color: 'var(--color-text-light)',

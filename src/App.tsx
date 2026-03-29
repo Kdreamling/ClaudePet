@@ -10,12 +10,13 @@ import { decide, computeMood } from './brain/decision'
 import { actionToPromptType } from './brain/action'
 import { generatePush } from './api/petApi'
 
-/** 大脑心跳间隔 */
-const BRAIN_TICK_INTERVAL = 60_000 // 每分钟
-/** 自动行走间隔 */
-const WALK_TICK_INTERVAL = 3_000   // 每 3 秒
+const IS_TAURI = !!(window as any).__TAURI_INTERNALS__
+/** URL 参数判断：?mode=chat 时渲染聊天窗口 */
+const IS_CHAT_MODE = new URLSearchParams(window.location.search).get('mode') === 'chat'
 
-/** 简易登录 — 复用 Reverie 的 JWT */
+const BRAIN_TICK_INTERVAL = 60_000
+const WALK_TICK_INTERVAL = 3_000
+
 async function ensureAuth() {
   if (localStorage.getItem('token')) return true
   const password = prompt('输入密码~')
@@ -33,16 +34,46 @@ async function ensureAuth() {
   } catch { alert('连接失败'); return false }
 }
 
-function App() {
+/** 聊天模式 — 独立窗口里只渲染聊天界面 */
+function ChatApp() {
+  const [authed, setAuthed] = useState(!!localStorage.getItem('token'))
+  const { isOpen, openChat, initSession, loadHistory } = useChatStore()
+
+  useEffect(() => {
+    if (!authed) ensureAuth().then(ok => setAuthed(ok))
+  }, [authed])
+
+  // 聊天窗口自动打开并加载历史
+  useEffect(() => {
+    if (authed && !isOpen) {
+      openChat()
+      initSession().then(() => loadHistory())
+    }
+  }, [authed])
+
+  return (
+    <div
+      style={{
+        width: '100%',
+        height: '100%',
+        background: 'var(--color-chat-bg)',
+        borderRadius: IS_TAURI ? '12px' : '0',
+        overflow: 'hidden',
+      }}
+    >
+      <ChatWindow />
+    </div>
+  )
+}
+
+/** 角色模式 — 主窗口只渲染角色 */
+function PetApp() {
   const [authed, setAuthed] = useState(!!localStorage.getItem('token'))
   const {
     mood, setMood, showBubble, setBehaviorState,
-    behaviorState, setAnimation, positionX, setPositionX, setDirection,
+    setAnimation, positionX, setPositionX, setDirection,
   } = usePetStore()
-  const isStreaming = useChatStore((s) => s.isStreaming)
-  const isChatOpen = useChatStore((s) => s.isOpen)
 
-  // 用 ref 避免 brainTick 的闭包问题
   const moodRef = useRef(mood)
   moodRef.current = mood
 
@@ -50,23 +81,17 @@ function App() {
     if (!authed) ensureAuth().then(ok => setAuthed(ok))
   }, [authed])
 
-  /** 大脑心跳 — 感知 → 决策 → 行动 */
   const brainTick = useCallback(async () => {
-    // 正在聊天时不触发推送
     if (useChatStore.getState().isOpen) return
-
     const signals = collectSignals()
     const currentMood = moodRef.current
 
-    // 更新情绪
     const newMood = computeMood(signals, currentMood)
     if (newMood !== currentMood) setMood(newMood)
 
-    // 决策
     const decision = decide(signals, newMood)
     if (decision.action === 'NONE') return
 
-    // 主动找 Dream → notification 动画
     setBehaviorState('WANTING')
     setAnimation('notification')
 
@@ -89,112 +114,78 @@ function App() {
       showBubble(fallbacks[decision.reason] || '...想你了', 5000)
     }
 
-    // 推送后如果 Dream 没点击，超时变 sulking
     setTimeout(() => {
       const state = usePetStore.getState()
       if (state.behaviorState === 'WANTING') {
         setBehaviorState('SULKING')
         setAnimation('sulking')
-        // sulking 一段时间后恢复
         setTimeout(() => {
           if (usePetStore.getState().behaviorState === 'SULKING') {
             setBehaviorState('IDLE')
             setMood('idle')
           }
-        }, 120_000) // 2 分钟后消气
+        }, 120_000)
       }
-    }, 60_000) // 1 分钟没理就生闷气
+    }, 60_000)
   }, [setMood, showBubble, setBehaviorState, setAnimation])
 
-  // 启动大脑心跳
   useEffect(() => {
-    // 首次延迟 3 秒再执行（等登录完成）
     const firstTimer = setTimeout(brainTick, 3000)
     const timer = setInterval(brainTick, BRAIN_TICK_INTERVAL)
     return () => { clearTimeout(firstTimer); clearInterval(timer) }
   }, [brainTick])
 
-  // 自动行走（idle 状态下左右走动）
   useEffect(() => {
     const timer = setInterval(() => {
       const state = usePetStore.getState()
-      // 只在空闲且不在聊天时走路
       if (state.behaviorState !== 'IDLE' || useChatStore.getState().isOpen) return
       if (state.mood !== 'idle' && state.mood !== 'bored') return
 
-      // 随机决定走还是站
       if (Math.random() < 0.4) {
-        // 走路
         const step = 0.05
         const goRight = state.positionX < 0.8 && (state.positionX < 0.2 || Math.random() > 0.5)
         const newX = goRight ? state.positionX + step : state.positionX - step
         setPositionX(newX)
         setDirection(goRight ? 'right' : 'left')
         setAnimation(goRight ? 'walk_right' : 'walk_left')
-        // 走完停下
         setTimeout(() => {
-          if (usePetStore.getState().animation === 'walk_right' || usePetStore.getState().animation === 'walk_left') {
-            setAnimation('idle_stand')
-          }
+          const a = usePetStore.getState().animation
+          if (a === 'walk_right' || a === 'walk_left') setAnimation('idle_stand')
         }, 2000)
       }
     }, WALK_TICK_INTERVAL)
     return () => clearInterval(timer)
   }, [setPositionX, setDirection, setAnimation])
 
-  // 记录用户活动
   useEffect(() => {
     const handler = () => recordInteraction()
     window.addEventListener('click', handler)
     return () => window.removeEventListener('click', handler)
   }, [])
 
-  // 拖拽窗口（Tauri 环境下）
-  const handleDragStart = async (e: React.MouseEvent) => {
-    // 只在非聊天状态下拖拽
-    if (useChatStore.getState().isOpen) return
-    try {
-      const { getCurrentWindow } = await import('@tauri-apps/api/window')
-      await getCurrentWindow().startDragging()
-    } catch {
-      // 浏览器环境忽略
-    }
-  }
-
   return (
     <div
-      className="relative"
-      onMouseDown={handleDragStart}
+      data-tauri-drag-region
       style={{
-        width: 280,
-        height: 280,
+        width: 200,
+        height: 200,
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'flex-end',
+        background: 'transparent',
       }}
     >
-      {/* 气泡层 — 在角色上方 */}
       <BubbleOverlay />
-
-      {/* 像素角色 — 可左右移动 */}
-      <div
-        style={{
-          position: 'relative',
-          transition: 'transform 0.8s ease-in-out',
-          transform: `translateX(${(positionX - 0.5) * 120}px)`,
-        }}
-      >
-        <PetCanvas />
-      </div>
-
-      {/* 对话窗口 — 用新窗口打开（Tauri）或 overlay（浏览器） */}
-      <ChatWindow />
-
-      {/* 便签 */}
+      <PetCanvas />
       <NoteOverlay />
+
+      {/* 浏览器模式下保留 overlay 聊天 */}
+      {!IS_TAURI && <ChatWindow />}
     </div>
   )
 }
 
-export default App
+export default function App() {
+  return IS_CHAT_MODE ? <ChatApp /> : <PetApp />
+}

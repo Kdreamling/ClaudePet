@@ -14,15 +14,15 @@
       {
         "label": "pet",
         "title": "ClaudePet",
-        "width": 280,
-        "height": 280,
+        "width": 200,
+        "height": 200,
         "transparent": true,
         "decorations": false,
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "resizable": false,
         "x": 1000,
-        "y": 400
+        "y": 500
       }
     ],
     "trayIcon": {

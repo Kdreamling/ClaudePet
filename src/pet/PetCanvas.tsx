@@ -2,6 +2,8 @@ import { usePetStore } from '../stores/petStore'
 import { useChatStore } from '../stores/chatStore'
 import type { AnimationName } from '../brain/types'
 
+const IS_TAURI = !!(window as any).__TAURI_INTERNALS__
+
 /** 动画状态 → GIF 文件名映射 */
 const ANIMATION_GIFS: Record<AnimationName, string> = {
   idle_stand:   'clawd-idle.gif',
@@ -30,12 +32,22 @@ export default function PetCanvas() {
   const openChat = useChatStore((s) => s.openChat)
 
   const gifFile = ANIMATION_GIFS[animation] || 'clawd-idle.gif'
-  // 加时间戳强制 GIF 从头播放（状态切换时）
   const gifSrc = `/sprites/${gifFile}`
 
-  const handleClick = () => {
+  const handleClick = async () => {
     onPetClicked()
-    openChat()
+    if (IS_TAURI) {
+      // Tauri 环境：打开独立聊天窗口
+      try {
+        const { invoke } = await import('@tauri-apps/api/core')
+        await invoke('open_chat_window')
+      } catch (e) {
+        console.error('open chat window failed:', e)
+      }
+    } else {
+      // 浏览器环境：overlay 模式
+      openChat()
+    }
   }
 
   return (
@@ -45,7 +57,7 @@ export default function PetCanvas() {
       style={{ width: 200, height: 200 }}
     >
       <img
-        key={animation}  /* key 变化时强制重新挂载，GIF 从头播放 */
+        key={animation}
         src={gifSrc}
         alt="ClaudePet"
         draggable={false}
